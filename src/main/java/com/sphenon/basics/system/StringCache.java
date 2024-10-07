@@ -1,7 +1,7 @@
 package com.sphenon.basics.system;
 
 /****************************************************************************
-  Copyright 2001-2018 Sphenon GmbH
+  Copyright 2001-2024 Sphenon GmbH
 
   Licensed under the Apache License, Version 2.0 (the "License"); you may not
   use this file except in compliance with the License. You may obtain a copy
@@ -33,6 +33,47 @@ import java.text.SimpleDateFormat;
 
 import java.io.*;
 
+/*
+    [Issue:EMOSAPPStringCache] [...emos...DockerProjectVolumeImage.template...].configuration.template,deploy.bash,StringCache.java
+
+    Improvements:
+    - separate read and write cache, so that read can be pre-deployed in jar
+    - allow different runtimes to write simultaneously to same cache
+    - solution might be:
+      - introduce configurable 'number ranges', say 100-10000 Numbers
+      - app allocates a number range ('reserved')
+      - app uses number range to generate new texts
+      - if stringcache based files are written out (COCP..., templates?),
+        string-cache is flushed (not only on exit)
+      - possibly introduce several string-cache files, and a
+        string-cache index file for allocating ranges etc.
+      - this would also require a lock file to sync multiple apps
+    - Infos on locks:
+      - https://docs.oracle.com/en/java/javase/13/docs/api/java.base/java/nio/channels/FileLock.html
+      - https://docs.oracle.com/en/java/javase/13/docs/api/java.base/java/nio/channels/FileChannel.html#lock()
+      - import java.io.*;
+        import java.nio.*;
+        RandomAccessFile file = null;
+        FileChannel f = null;
+        FileLock lock = null;
+        try {
+            File lockfile = new File(System.getProperty("java.io.tmpdir"), "my.lock");
+            file = new RandomAccessFile(lockfile, "rw");
+            f = file.getChannel();
+            lock = f.tryLock(); // oder .lock();
+            if (lock != null) {
+                lockfile.deleteOnExit();
+                f.write(...something...);
+                f.force(false);
+            } else { f.read(...if...you...like...); }
+            ...do...something...
+        } finally {
+            if (lock != null && lock.isValid()) { lock.release(); }
+            if (file != null){ file.close(); }
+        }
+*/
+
+
 public class StringCache {
     static final public Class _class = StringCache.class;
 
@@ -43,6 +84,8 @@ public class StringCache {
 
     static protected Configuration config;
     static { config = Configuration.create(RootContext.getInitialisationContext(), _class); };
+
+    protected String cache;
     
     protected StringCache(CallContext context) {
 
@@ -90,7 +133,7 @@ public class StringCache {
 
     public void checkTimestamp(CallContext context, String timestamp_to_check, String client) {
         if (this.timestamp == null || this.timestamp.equals(timestamp_to_check) == false) {
-            CustomaryContext.create((Context)context).throwConfigurationError(context, "Timestamp of string cache does not match clients timestamp ('%(client)')", "client", client);
+            CustomaryContext.create((Context)context).throwConfigurationError(context, "Timestamp '%(timestamp)' from string cache '%(cache)' does not match clients '%(client)' timestamp '%(clientstamp)'", "timestamp", this.timestamp, "cache", this.cache == null || this.cache.isEmpty() ? "[not configured]" : this.cache, "client", client, "clientstamp", timestamp_to_check);
             throw (ExceptionConfigurationError) null; // compiler insists
         }
     }
@@ -117,11 +160,9 @@ public class StringCache {
         return index;
     }
 
-    protected String cache;
     protected boolean do_save_cache;
 
     public void saveCacheOnExit(CallContext context) {
-        this.cache = config.get(context, "Cache", (String) null);
         this.do_save_cache = config.get(context, "SaveCacheOnExit", false);
         java.lang.Runtime.getRuntime().addShutdownHook(new Thread() { public void run() { saveCache(RootContext.getDestructionContext()); } });
     }
@@ -132,12 +173,12 @@ public class StringCache {
                 return; // no need to save
             }
 
-            if (cache == null) {
+            if (this.cache == null) {
                 return; // no place to save
             }
 
             try {
-                File f = new File(cache);
+                File f = new File(this.cache);
                 f.setWritable(true);
                 FileOutputStream fos = new FileOutputStream(f);
                 ObjectOutputStream oos = new ObjectOutputStream(fos);
@@ -146,31 +187,31 @@ public class StringCache {
                 oos.close();
                 fos.close();
             } catch (IOException ioe) {
-                CustomaryContext.create((Context)context).throwEnvironmentFailure(context, ioe, "Cannot save string cache to '%(file)'", "file", cache);
+                CustomaryContext.create((Context)context).throwEnvironmentFailure(context, ioe, "Cannot save string cache to '%(file)'", "file", this.cache);
                 throw (ExceptionEnvironmentFailure) null; // compiler insists
             }
         }
     }
 
     public void loadCache(CallContext context) {
-        String cache = config.get(context, "Cache", (String) null);
-        if (cache == null) {
+        this.cache = config.get(context, "Cache", (String) null);
+        if (this.cache == null) {
             return; // no place to load from
         }
 
         try {
             InputStream is = null;
-            if (cache.startsWith("//JavaResource/"))  {
-                String scr = cache.substring(cache.length() > 15 && cache.charAt(15) == '/' ? 16 : 15);
+            if (this.cache.startsWith("//JavaResource/"))  {
+                String scr = this.cache.substring(cache.length() > 15 && this.cache.charAt(15) == '/' ? 16 : 15);
                 is = this.getClass().getClassLoader().getResourceAsStream(scr);
                 if (is == null) {
-                    if ((notification_level & Notifier.MONITORING) != 0) { NotificationContext.sendCaution(context, "String cache configured ('%(cache)'), but not found, this may cause trouble lateron", "cache", cache); }
+                    if ((notification_level & Notifier.MONITORING) != 0) { NotificationContext.sendCaution(context, "String cache configured ('%(cache)'), but not found, this may cause trouble lateron", "cache", this.cache); }
                     return; // nothing to load
                 }
             } else {
-                File f = new File(cache);
+                File f = new File(this.cache);
                 if (f.exists() == false) {
-                    if ((notification_level & Notifier.MONITORING) != 0) { NotificationContext.sendCaution(context, "String cache configured ('%(cache)'), but not found, this may cause trouble lateron", "cache", cache); }
+                    if ((notification_level & Notifier.MONITORING) != 0) { NotificationContext.sendCaution(context, "String cache configured ('%(cache)'), but not found, this may cause trouble lateron", "cache", this.cache); }
                     return; // nothing to load
                 }
                 FileInputStream fis = new FileInputStream(f);
@@ -183,10 +224,10 @@ public class StringCache {
             ois.close();
             is.close();
         } catch (IOException ioe) {
-            CustomaryContext.create((Context)context).throwEnvironmentFailure(context, ioe, "Cannot load string cache from '%(file)'", "file", cache);
+            CustomaryContext.create((Context)context).throwEnvironmentFailure(context, ioe, "Cannot load string cache from '%(file)'", "file", this.cache);
             throw (ExceptionEnvironmentFailure) null; // compiler insists
         } catch (ClassNotFoundException cnfe) {
-            CustomaryContext.create((Context)context).throwInvalidState(context, cnfe, "Cannot load string cache from '%(file)', class unexpectedly not found (resource should contain List<String>)", "file", cache);
+            CustomaryContext.create((Context)context).throwInvalidState(context, cnfe, "Cannot load string cache from '%(file)', class unexpectedly not found (resource should contain List<String>)", "file", this.cache);
             throw (ExceptionInvalidState) null; // compiler insists
         }
     }

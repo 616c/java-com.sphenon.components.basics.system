@@ -14,21 +14,35 @@ package com.sphenon.basics.system;
   under the License.
 *****************************************************************************/
 
-import com.sphenon.basics.context.*;
-import com.sphenon.basics.exception.*;
-import com.sphenon.basics.context.classes.*;
-import com.sphenon.basics.message.*;
-import com.sphenon.basics.notification.*;
-import com.sphenon.basics.customary.*;
+import java.io.*;
+import java.nio.*;
 
-public class ArrayUtilities {
+public class TeeWriter extends PrintWriter {
+    private final Writer other;
 
-    static public<T> boolean contains(CallContext context, T[] array, T value) {
-        if (array == null) { return false; }
-        for (T t : array) {
-            if (t != null && t.equals(value)) { return true; }
-        }
-        return false;
+    public TeeWriter(Writer writer, Writer other) {
+        super(writer);
+        this.other = other;
+    }
+
+    public void write(char buf[], int off, int len) {
+        super.write(buf, off, len);
+        try {
+            other.write(buf, off, len);
+        } catch (IOException ioe) { }
+    }
+
+    public void flush() {
+        super.flush();
+        try {
+            other.flush();
+        } catch (IOException ioe) { }
+    }
+
+    public void close() {
+        super.close();
+        try {
+            other.close();
+        } catch (IOException ioe) { }
     }
 }
-

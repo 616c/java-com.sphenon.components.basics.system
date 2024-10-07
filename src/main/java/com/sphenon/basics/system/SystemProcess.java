@@ -1,7 +1,7 @@
 package com.sphenon.basics.system;
 
 /****************************************************************************
-  Copyright 2001-2018 Sphenon GmbH
+  Copyright 2001-2024 Sphenon GmbH
 
   Licensed under the Apache License, Version 2.0 (the "License"); you may not
   use this file except in compliance with the License. You may obtain a copy
@@ -27,6 +27,7 @@ import java.io.OutputStream;
 import java.io.PipedOutputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.io.ByteArrayInputStream;
 
 import java.util.concurrent.locks.*;
 
@@ -241,15 +242,15 @@ public class SystemProcess implements ManagedResource {
                 this.process = java.lang.Runtime.getRuntime().exec(command_array, null, working_folder == null ? null : new java.io.File(working_folder));
             }
         } catch (java.io.IOException ioe) {
-            CustomaryContext.create((Context)context).throwConfigurationError(context, ioe, "External conversion process '%(command)' could not be started", "command", (command != null ? command : StringUtilities.join(context, command_array, " ", true)));
+            CustomaryContext.create((Context)context).throwConfigurationError(context, ioe, "External process '%(command)' could not be started", "command", (command != null ? command : StringUtilities.join(context, command_array, " ", true)));
             throw (ExceptionConfigurationError) null; // compiler insists
         }
 
         this.process_active = true;
     
-        this.process_stdout = process.getInputStream();
-        this.process_stderr = process.getErrorStream();
-        this.process_stdin = this.process.getOutputStream();
+        this.process_stdout = this.process.getInputStream();
+        this.process_stderr = this.process.getErrorStream();
+        this.process_stdin  = this.process.getOutputStream();
 
         if ((notification_level & Notifier.SELF_DIAGNOSTICS) != 0) { NotificationContext.sendTrace(context, Notifier.SELF_DIAGNOSTICS, "SystemProcess, creating output streams..."); }
             
@@ -491,32 +492,32 @@ public class SystemProcess implements ManagedResource {
                                 output_input_stream_reader.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close isr: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stdout listener thread could not close isr: %(reason)", "reason", ioe);
                         }
                         try {
                             if (output_tee_input_stream != null) {
                                 output_tee_input_stream.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close tis: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stdout listener thread could not close tis: %(reason)", "reason", ioe);
                         }
                         try {
                             if (process_output_pipe != null) {
                                 process_output_pipe.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close process output pipe: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stdout listener thread could not close process output pipe: %(reason)", "reason", ioe);
                         }
                         try {
                             if (process_output_stdout != null) {
                                 process_output_stdout.flush();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not flush process output stdout: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stdout listener thread could not flush process output stdout: %(reason)", "reason", ioe);
                         }
                     } catch (java.io.IOException ioe) {
                         if (explicitly_stopped == false) {
-                            NotificationContext.sendError(context, "system process listener thread terminated unsuccessfully: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stdout listener thread terminated unsuccessfully: %(reason)", "reason", ioe);
                         }
                     }
                     if ((notification_level & Notifier.SELF_DIAGNOSTICS) != 0) { NotificationContext.sendTrace(context, Notifier.SELF_DIAGNOSTICS, "SystemProcess, output listener thread terminated."); }
@@ -539,38 +540,37 @@ public class SystemProcess implements ManagedResource {
                             }
                             error_tee_input_stream.flushOutputStreams();
                         }
-
                         try {
                             if (error_input_stream_reader != null) {
                                 error_input_stream_reader.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close isr: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stderr listener thread could not close isr: %(reason)", "reason", ioe);
                         }
                         try {
                             if (error_tee_input_stream != null) {
                                 error_tee_input_stream.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close tis: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stderr listener thread could not close tis: %(reason)", "reason", ioe);
                         }
                         try {
                             if (process_error_pipe != null) {
                                 process_error_pipe.close();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not close process error pipe: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stderr listener thread could not close process error pipe: %(reason)", "reason", ioe);
                         }
                         try {
                             if (process_error_stderr != null) {
                                 process_error_stderr.flush();
                             }
                         } catch (java.io.IOException ioe) {
-                            NotificationContext.sendError(context, "system process supplier thread could not flush process error stderr: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stderr listener thread could not flush process error: %(reason)", "reason", ioe);
                         }
                     } catch (java.io.IOException ioe) {
                         if (explicitly_stopped == false) {
-                            NotificationContext.sendError(context, "system process listener thread terminated unsuccessfully: %(reason)", "reason", ioe);
+                            NotificationContext.sendError(context, "system process stderr listener thread terminated unsuccessfully: %(reason)", "reason", ioe);
                         }
                     }
                     if ((notification_level & Notifier.SELF_DIAGNOSTICS) != 0) { NotificationContext.sendTrace(context, Notifier.SELF_DIAGNOSTICS, "SystemProcess, error listener thread terminated."); }
@@ -621,5 +621,26 @@ public class SystemProcess implements ManagedResource {
         sp.start(context, null, true, false, false, true, false, false, false);
         sp.wait(context);
         return sp.getExitValue(context);
+    }
+
+    static public int execute(CallContext context, InputStream process_input, String working_folder, String... command_array) {
+        return execute(context, process_input, null, working_folder, command_array);
+    }
+
+    static public int execute(CallContext context, InputStream process_input, String[] outerr, String working_folder, String... command_array) {
+        return execute(context, false, process_input, outerr, working_folder, command_array);
+    }
+
+    static public int execute(CallContext context, boolean debug, InputStream process_input, String[] outerr, String working_folder, String... command_array) {
+        SystemProcess sp = new SystemProcess(context, command_array, working_folder, debug);
+        sp.start(context, process_input, outerr == null ? true : false, false, outerr != null ? true : false, outerr == null ? true : false, false, outerr != null ? true : false, false);
+        sp.wait(context);
+        outerr[0] = sp.getProcessOutputAsString(context, true);
+        outerr[1] = sp.getProcessErrorAsString(context, true);
+        return sp.getExitValue(context);
+    }
+
+    static public InputStream createInputStreamFromText(CallContext context, String data) {
+        return new ByteArrayInputStream(data.getBytes());
     }
 }

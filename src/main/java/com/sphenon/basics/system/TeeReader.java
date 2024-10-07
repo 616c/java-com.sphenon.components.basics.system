@@ -15,21 +15,21 @@ package com.sphenon.basics.system;
 *****************************************************************************/
 
 import java.io.*;
+import java.nio.*;
 
-public class TeeBufferedReader extends BufferedReader {
+public class TeeReader extends Reader {
 
-    protected BufferedReader buffered_reader;
-    protected BufferedWriter buffered_writer;
-    protected StringWriter   string_writer;
+    protected Reader       reader;
+    protected Writer       writer;
+    protected StringWriter string_writer;
  
-    public TeeBufferedReader(BufferedReader buffered_reader, BufferedWriter buffered_writer) {
-        super(buffered_reader); // super class insists
-        this.buffered_reader = buffered_reader;
-        if (buffered_writer != null) {
-            this.buffered_writer = buffered_writer;
+    public TeeReader(Reader reader, Writer writer) {
+        this.reader = reader;
+        if (writer != null) {
+            this.writer = writer;
         } else {
             this.string_writer = new StringWriter();
-            this.buffered_writer = new BufferedWriter(this.string_writer);
+            this.writer = this.string_writer;
         }
     }
 
@@ -38,48 +38,53 @@ public class TeeBufferedReader extends BufferedReader {
     }
 
     public void close() throws IOException {
-        this.buffered_reader.close();
-        this.buffered_writer.close();
+        this.reader.close();
+        this.writer.close();
     }
 
     public void mark(int readAheadLimit) throws IOException {
-        this.buffered_reader.mark(readAheadLimit);
+        this.reader.mark(readAheadLimit);
     }
 
     public boolean markSupported() {
-        return this.buffered_reader.markSupported();
+        return this.reader.markSupported();
     }
 
     public int read() throws IOException {
-        int c = this.buffered_reader.read();
-        this.buffered_writer.write(c);
+        int c = this.reader.read();
+        this.writer.write(c);
         return c;
     }
 
-    public int read(char[] cbuf, int off, int len) throws IOException {
-        int n = this.buffered_reader.read(cbuf, off, len);
-        if (n != -1) { this.buffered_writer.write(cbuf, off, n); }
+    public int read(char[] cbuf) throws IOException {
+        int n = this.reader.read(cbuf);
+        if (n != -1) { this.writer.write(cbuf, 0, n); }
         return n;
     }
 
-    public String readLine() throws IOException {
-        String s = this.buffered_reader.readLine();
-        if (s != null) {
-            this.buffered_writer.write(s, 0, s.length());
-            this.buffered_writer.newLine();
-        }
-        return s;
+    public int read(char[] cbuf, int off, int len) throws IOException {
+        int n = this.reader.read(cbuf, off, len);
+        if (n != -1) { this.writer.write(cbuf, off, n); }
+        return n;
+    }
+
+    public int read(CharBuffer cbuf) throws IOException {
+        int s = cbuf.position();
+        int n = this.reader.read(cbuf);
+        int e = cbuf.position();
+        if (n != -1) { this.writer.append(cbuf, s, e); }
+        return n;
     }
 
     public boolean ready() throws IOException {
-        return this.buffered_reader.ready();
+        return this.reader.ready();
     }
 
     public void reset() throws IOException {
-        this.buffered_reader.reset();
+        this.reader.reset();
     }
 
     public long skip(long n) throws IOException {
-        return this.buffered_reader.skip(n);
+        return this.reader.skip(n);
     }
 }
